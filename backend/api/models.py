@@ -51,7 +51,7 @@ class CollaboratorTest(models.Model):
         unique_together = ('collaborator', 'diagnostic')  
 
     def __str__(self):
-        return f"{self.diagnostic.name} @ {self.collaborator.name} — ৳{self.price}"
+        return f"{self.diagnostic.name} @ {self.collaborator.name} — Tk.{self.price}"
 
 
 class Booking(models.Model):

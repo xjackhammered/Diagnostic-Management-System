@@ -73,12 +73,13 @@ export default function Patients() {
           <>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Name</th><th>Age</th><th>Phone</th><th>Email</th><th>Since</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Age</th><th>Gender</th><th>Phone</th><th>Email</th><th>Since</th><th></th></tr></thead>
                 <tbody>
                   {patients.map(p => (
                     <tr key={p.id}>
                       <td><strong>{p.name}</strong></td>
                       <td>{p.age}</td>
+                      <td>{p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : p.gender === 'O' ? 'Other' : 'N/A'}</td>
                       <td>{p.contact_number}</td>
                       <td className="text-muted">{p.email}</td>
                       <td className="text-muted">{new Date(p.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</td>
@@ -130,6 +131,18 @@ export default function Patients() {
                 placeholder="30"
                 min="0"
               />
+            </div>
+            <div className="form-group">
+              <label>Gender</label>
+              <select
+                value={form.gender || ''}
+                onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+              >
+                <option value="">Select</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+                <option value="O">Other</option>
+              </select>
             </div>
           </div>
           <div className="form-row">

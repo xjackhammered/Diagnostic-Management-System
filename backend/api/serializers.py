@@ -10,17 +10,14 @@ from .models import (
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
-        fields = ['id', 'name', 'age', 'contact_number', 'email', 'created_at']
+        fields = ['id', 'name', 'age', 'contact_number', 'email', 'gender', 'created_at']
         read_only_fields = ['id', 'created_at']
-
-
-
 
 
 class DoctorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
-        fields = ['id', 'name', 'age', 'contact_number', 'email', 'created_at']
+        fields = ['id', 'name', 'age', 'contact_number', 'email', 'gender', 'specialization', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

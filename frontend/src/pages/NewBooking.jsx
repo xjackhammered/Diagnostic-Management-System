@@ -23,13 +23,14 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
     age: '',
     contact_number: '',
     email: '',
+    gender: '',           // ← new field
   })
 
   const createPatientMut = useMutation({
     mutationFn: createPatient,
     onSuccess: (res) => {
       onCreated(res.data)
-      setForm({ name: '', age: '', contact_number: '', email: '' })
+      setForm({ name: '', age: '', contact_number: '', email: '', gender: '' })  // reset all
       onClose()
       toast.success('Patient created and selected')
     },
@@ -40,7 +41,6 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
   const nameInputRef = useRef(null)
   useEffect(() => {
     if (isOpen && nameInputRef.current) {
-      // small delay to ensure display is set
       setTimeout(() => nameInputRef.current?.focus(), 50)
     }
   }, [isOpen])
@@ -77,12 +77,27 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
         </div>
         <div className="form-row">
           <div className="form-group">
+            <label>Gender</label>
+            <select
+              value={form.gender}
+              onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
+            >
+              <option value="">Select</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+              <option value="O">Other</option>
+            </select>
+          </div>
+          <div className="form-group">
+            {/* placeholder to keep grid alignment */}
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
             <label>Phone</label>
             <input
               value={form.contact_number}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, contact_number: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, contact_number: e.target.value }))}
               placeholder="+880..."
             />
           </div>
@@ -91,9 +106,7 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
             <input
               type="email"
               value={form.email}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, email: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               placeholder="email@example.com"
             />
           </div>

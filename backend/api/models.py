@@ -1,9 +1,16 @@
 from django.db import models
 
 
+GENDER_CHOICES = [
+    ('M', 'Male'),
+    ('F', 'Female'),
+    ('O', 'Other'),
+]
+
 class Patient(models.Model):
     name = models.CharField(max_length=100, blank=False)
     age = models.IntegerField(blank=False)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True, null=True)
     contact_number = models.CharField(max_length=20, blank=False)
     email = models.EmailField(blank=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -15,6 +22,8 @@ class Patient(models.Model):
 class Doctor(models.Model):
     name = models.CharField(max_length=100, blank=False)
     age = models.IntegerField(blank=False)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True, null=True)
+    specialization = models.CharField(max_length=200, blank=True, null=True)
     contact_number = models.CharField(max_length=20, blank=False)
     email = models.EmailField(blank=False)
     created_at = models.DateTimeField(auto_now_add=True)

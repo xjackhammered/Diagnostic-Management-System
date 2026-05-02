@@ -93,7 +93,7 @@ class Booking(models.Model):
         if not self.booking_id:
             last = Booking.objects.order_by('-id').first()
             next_num = (last.id + 1) if last else 1
-            self.booking_id = f"DX-{next_num:04d}"
+            self.booking_id = f"BLV-{next_num:04d}"
         super().save(*args, **kwargs)
 
 

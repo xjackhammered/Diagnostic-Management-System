@@ -20,7 +20,6 @@ from django.db.models import ProtectedError
 
 
 def paginate(qs, request):
-    """Simple page-based pagination. Returns (slice, meta dict)."""
     page_size = int(request.query_params.get('page_size', 20))
     page = int(request.query_params.get('page', 1))
     total = qs.count()

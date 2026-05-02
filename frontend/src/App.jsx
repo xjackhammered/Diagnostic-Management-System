@@ -20,8 +20,8 @@ export default function App() {
       <div className="app-shell">
         <aside className="sidebar">
           <div className="sidebar-logo">
-            <h1>DiagnosticHub</h1>
-            <p>Management System</p>
+            <h1>BelleVie</h1>
+            <p>Global Health Services</p>
           </div>
           <nav>
             <div className="nav-section">Overview</div>

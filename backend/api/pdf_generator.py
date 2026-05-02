@@ -132,7 +132,7 @@ def generate_booking_pdf(booking):
         [
             Paragraph(f'<b>Diagnostic Center:</b> {collaborator_name}', info_style),
             Paragraph(
-                f'<b>Scheduled:</b> {booking.scheduled_at.strftime("%d %b %Y  %H:%M") if booking.scheduled_at else "N/A"}',
+                f'<b>Scheduled:</b> {booking.scheduled_at.strftime("%d %b %Y  %I:%M %p") if booking.scheduled_at else "N/A"}',
                 info_style
             ),
         ],

@@ -364,24 +364,31 @@ def booking_pdf(request, pk):
         ).prefetch_related('items'), pk=pk
     )
     pdf_buffer = generate_booking_pdf(booking)
-    safe_name = booking.patient.name.replace(' ', '_')
+    safe_name = ''.join(
+        c for c in booking.patient.name
+        if c.isascii() and (c.isalnum() or c in ' _-')
+    ).strip().replace(' ', '_')
     filename = f"{booking.booking_id}_{safe_name}.pdf"
     response = HttpResponse(pdf_buffer, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response['Content-Disposition'] = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{filename}"
     return response
 
 
 @api_view(['GET'])
 def booking_stats(request):
-    """
-    GET /api/bookings/stats/  — dashboard summary
-    """
-    data = Booking.objects.aggregate(
-        total_bookings=Count('id'),
-        total_revenue=Sum('grand_total'),
+    bookings = Booking.objects.select_related('collaborator').all()
+
+    our_revenue = sum(
+        b.grand_total * (b.collaborator.percentage / 100)
+        for b in bookings
+        if b.collaborator and b.collaborator.percentage
     )
-    data['total_revenue'] = data['total_revenue'] or Decimal('0')
-    data['total_patients'] = Patient.objects.count()
-    data['total_collaborators'] = Collaborator.objects.count()
-    data['total_diagnostics'] = Diagnostic.objects.count()
+
+    data = {
+        'total_bookings': bookings.count(),
+        'total_revenue': round(our_revenue, 2),
+        'total_patients': Patient.objects.count(),
+        'total_collaborators': Collaborator.objects.count(),
+        'total_diagnostics': Diagnostic.objects.count(),
+    }
     return Response(data)

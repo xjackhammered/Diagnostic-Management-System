@@ -334,6 +334,7 @@ def booking_list(request):
         if service_type in ('center', 'home'):
             qs = qs.filter(service_type=service_type)
 
+        qs = qs.order_by('-created_at')   # newest first
         results, meta = paginate(qs, request)
         return Response({**meta, 'results': BookingSerializer(results, many=True).data})
 

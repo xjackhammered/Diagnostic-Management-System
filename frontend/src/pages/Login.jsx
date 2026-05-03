@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { loginUser } from '../api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
+import logo from '../assets/logo.png'
 
 export default function Login() {
   const { setUser } = useAuth()
@@ -36,11 +37,13 @@ export default function Login() {
       justifyContent: 'center', background: 'var(--bg)',
     }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
+
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#1A3E6F' }}>BelleVie</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Global Health Services
-          </div>
+          <img
+            src={logo}
+            alt="BelleVie"
+            style={{ height: 120, objectFit: 'contain' }}
+          />
         </div>
 
         <div className="card" style={{ padding: 28 }}>
@@ -66,7 +69,7 @@ export default function Login() {
             </div>
             <button
               type="submit"
-              className="btn btn-primary w-full"
+              className="btn btn-primary"
               style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
               disabled={loading}
             >
@@ -74,6 +77,7 @@ export default function Login() {
             </button>
           </form>
         </div>
+
       </div>
     </div>
   )

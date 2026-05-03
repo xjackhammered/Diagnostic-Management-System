@@ -23,21 +23,20 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
     age: '',
     contact_number: '',
     email: '',
-    gender: '',           // ← new field
+    gender: '',
   })
 
   const createPatientMut = useMutation({
     mutationFn: createPatient,
     onSuccess: (res) => {
       onCreated(res.data)
-      setForm({ name: '', age: '', contact_number: '', email: '', gender: '' })  // reset all
+      setForm({ name: '', age: '', contact_number: '', email: '', gender: '' })
       onClose()
       toast.success('Patient created and selected')
     },
     onError: () => toast.error('Failed to create patient'),
   })
 
-  // Ref to focus the first input when modal opens
   const nameInputRef = useRef(null)
   useEffect(() => {
     if (isOpen && nameInputRef.current) {
@@ -45,7 +44,6 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
     }
   }, [isOpen])
 
-  // Always render the portal – just hide it when closed
   return createPortal(
     <div
       className="modal-overlay"
@@ -88,9 +86,7 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
               <option value="O">Other</option>
             </select>
           </div>
-          <div className="form-group">
-            {/* placeholder to keep grid alignment */}
-          </div>
+          <div className="form-group">{/* placeholder */}</div>
         </div>
         <div className="form-row">
           <div className="form-group">
@@ -136,6 +132,7 @@ export default function NewBooking() {
   const navigate = useNavigate()
   const searchRef = useRef(null)
   const searchTimeout = useRef(null) // patient search debounce
+  const testWrapperRef = useRef(null) // for click‑outside detection
 
   // Patient
   const [patientSearch, setPatientSearch] = useState('')
@@ -172,7 +169,18 @@ export default function NewBooking() {
   const collaborators = collabData?.results || []
   const doctors = doctorData?.results || []
 
-  // ── Patient search with debounce (no focus loss) ─────────
+  // ── Close test dropdown when clicking outside ────────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (testWrapperRef.current && !testWrapperRef.current.contains(e.target)) {
+        setShowTestDrop(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, []) // runs once on mount
+
+  // ── Patient search with debounce ─────────────────────────
   const handlePatientSearch = (e) => {
     const val = e.target.value
     setPatientSearch(val)
@@ -181,7 +189,6 @@ export default function NewBooking() {
       setShowPatientDrop(false)
       return
     }
-
     clearTimeout(searchTimeout.current)
     searchTimeout.current = setTimeout(async () => {
       const res = await getPatients({ search: val, page_size: 6 })
@@ -190,22 +197,18 @@ export default function NewBooking() {
     }, 300)
   }
 
-  // ── Test search ──────────────────────────────────────────
+  // ── Test search – shows all on focus, refines with typing ─
   const searchTests = useCallback(
     async (q) => {
       if (!collaboratorId) {
         toast.error('Select a collaborator first')
         return
       }
-      if (!q.trim()) {
-        setTestResults([])
-        setShowTestDrop(false)
-        return
-      }
+      const trimmed = q.trim()
       const res = await getCollaboratorTests({
         collaborator: collaboratorId,
-        search: q,
-        page_size: 10,
+        search: trimmed ? trimmed : undefined,   // undefined → fetch all
+        page_size: trimmed ? 10 : 100,           // more when showing everything
       })
       const filtered = res.data.results.filter(
         (t) => !selectedTests.find((s) => s.id === t.id)
@@ -472,7 +475,7 @@ export default function NewBooking() {
             Select a collaborator first to see available tests and prices.
           </div>
         )}
-        <div className="autocomplete-wrap">
+        <div className="autocomplete-wrap" ref={testWrapperRef}>
           <div className="search-bar">
             <Search />
             <input
@@ -482,9 +485,13 @@ export default function NewBooking() {
                 setTestSearch(e.target.value)
                 searchTests(e.target.value)
               }}
-              onFocus={() => testSearch && setShowTestDrop(true)}
+              onFocus={() => {
+                if (collaboratorId) searchTests(testSearch)
+              }}
               placeholder={
-                collaboratorId ? 'Search tests...' : 'Select a collaborator first'
+                collaboratorId
+                  ? 'Search or click to see all tests...'
+                  : 'Select a collaborator first'
               }
               disabled={!collaboratorId}
             />

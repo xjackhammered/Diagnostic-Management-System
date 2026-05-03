@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation} from 'react-router-dom'
 import { Search, X, Home, Building2, Download, Plus } from 'lucide-react'
 import {
   getPatients,
@@ -130,15 +130,16 @@ function AddPatientModal({ isOpen, onClose, onCreated }) {
 export default function NewBooking() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const searchRef = useRef(null)
   const searchTimeout = useRef(null) // patient search debounce
   const testWrapperRef = useRef(null) // for click‑outside detection
 
   // Patient
-  const [patientSearch, setPatientSearch] = useState('')
+  const [patientSearch, setPatientSearch] = useState(location.state?.patient?.name || '')
   const [patientResults, setPatientResults] = useState([])
   const [showPatientDrop, setShowPatientDrop] = useState(false)
-  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [selectedPatient, setSelectedPatient] = useState(location.state?.patient || null)
   const [newPatientModal, setNewPatientModal] = useState(false)
 
   // Booking fields

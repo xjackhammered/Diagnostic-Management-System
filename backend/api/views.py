@@ -5,7 +5,7 @@ from django.http import HttpResponse
 from django.db.models import Count, Sum, Q
 from django.shortcuts import get_object_or_404
 from decimal import Decimal
-
+from urllib.parse import quote
 from .models import (
     Patient, Doctor, Collaborator, Diagnostic,
     CollaboratorTest, Booking, BookingItem
@@ -16,10 +16,14 @@ from .serializers import (
     BookingSerializer, BookingCreateSerializer,
 )
 from .pdf_generator import generate_booking_pdf
-from django.db.models import ProtectedError
 
+
+# ──────────────────────────────────────────────
+#  HELPERS
+# ──────────────────────────────────────────────
 
 def paginate(qs, request):
+    """Simple page-based pagination. Returns (slice, meta dict)."""
     page_size = int(request.query_params.get('page_size', 20))
     page = int(request.query_params.get('page', 1))
     total = qs.count()
@@ -33,6 +37,10 @@ def paginate(qs, request):
         'previous': page - 1 if page > 1 else None,
     }
 
+
+# ──────────────────────────────────────────────
+#  PATIENTS
+# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def patient_list(request):
@@ -63,6 +71,11 @@ def patient_list(request):
 
 @api_view(['GET', 'PATCH', 'PUT', 'DELETE'])
 def patient_detail(request, pk):
+    """
+    GET    /api/patients/<pk>/
+    PATCH  /api/patients/<pk>/
+    DELETE /api/patients/<pk>/
+    """
     patient = get_object_or_404(Patient, pk=pk)
 
     if request.method == 'GET':
@@ -76,16 +89,13 @@ def patient_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
-        try:
-            patient.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except ProtectedError:
-            return Response(
-                {'detail': 'Cannot delete — this patient has existing bookings.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        patient.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# ──────────────────────────────────────────────
+#  DOCTORS
+# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def doctor_list(request):
@@ -128,6 +138,10 @@ def doctor_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# ──────────────────────────────────────────────
+#  COLLABORATORS
+# ──────────────────────────────────────────────
+
 @api_view(['GET', 'POST'])
 def collaborator_list(request):
     """
@@ -169,6 +183,10 @@ def collaborator_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# ──────────────────────────────────────────────
+#  DIAGNOSTICS
+# ──────────────────────────────────────────────
+
 @api_view(['GET', 'POST'])
 def diagnostic_list(request):
     """
@@ -209,6 +227,10 @@ def diagnostic_detail(request, pk):
         diagnostic.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
+# ──────────────────────────────────────────────
+#  COLLABORATOR TESTS (price assignment)
+# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def collaborator_test_list(request):
@@ -277,6 +299,10 @@ def collaborator_test_detail(request, pk):
             status=status.HTTP_200_OK
         )
 
+
+# ──────────────────────────────────────────────
+#  BOOKINGS
+# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def booking_list(request):
@@ -364,26 +390,27 @@ def booking_pdf(request, pk):
         ).prefetch_related('items'), pk=pk
     )
     pdf_buffer = generate_booking_pdf(booking)
-    safe_name = ''.join(
-        c for c in booking.patient.name
-        if c.isascii() and (c.isalnum() or c in ' _-')
-    ).strip().replace(' ', '_')
+    # Strip non-ASCII characters to avoid (anonymous) filename in browsers
+    safe_name = ''.join(c for c in booking.patient.name if c.isascii() and (c.isalnum() or c in ' _-')).strip().replace(' ', '_')
     filename = f"{booking.booking_id}_{safe_name}.pdf"
     response = HttpResponse(pdf_buffer, content_type='application/pdf')
-    response['Content-Disposition'] = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{filename}"
+    # Use both filename and filename* (RFC 5987) for maximum browser compatibility
+    response['Content-Disposition'] = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
     return response
 
 
 @api_view(['GET'])
 def booking_stats(request):
+    """
+    GET /api/bookings/stats/
+    Total revenue = our cut: sum of (grand_total * collaborator.percentage / 100) per booking
+    """
     bookings = Booking.objects.select_related('collaborator').all()
-
     our_revenue = sum(
         b.grand_total * (b.collaborator.percentage / 100)
         for b in bookings
         if b.collaborator and b.collaborator.percentage
     )
-
     data = {
         'total_bookings': bookings.count(),
         'total_revenue': round(our_revenue, 2),
@@ -392,3 +419,115 @@ def booking_stats(request):
         'total_diagnostics': Diagnostic.objects.count(),
     }
     return Response(data)
+
+
+# ──────────────────────────────────────────────
+#  AUTH
+# ──────────────────────────────────────────────
+
+from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import ensure_csrf_cookie
+
+
+@api_view(['GET'])
+@ensure_csrf_cookie
+def csrf_token(request):
+    """
+    GET /api/auth/csrf/
+    Called once when the React app loads so the browser gets the CSRF cookie.
+    """
+    return Response({'detail': 'CSRF cookie set'})
+
+
+@api_view(['POST'])
+def login_view(request):
+    """
+    POST /api/auth/login/
+    Body: { username, password }
+    """
+    username = request.data.get('username', '').strip()
+    password = request.data.get('password', '')
+
+    if not username or not password:
+        return Response(
+            {'detail': 'Username and password are required.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = authenticate(request, username=username, password=password)
+
+    if user is None:
+        return Response(
+            {'detail': 'Invalid username or password.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    if not user.is_staff:
+        return Response(
+            {'detail': 'Access restricted to staff only.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    login(request, user)
+    return Response({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'is_superuser': user.is_superuser,
+    })
+
+
+@api_view(['POST'])
+def logout_view(request):
+    """
+    POST /api/auth/logout/
+    """
+    logout(request)
+    return Response({'detail': 'Logged out successfully.'})
+
+
+@api_view(['GET'])
+def me(request):
+    """
+    GET /api/auth/me/
+    Returns the currently logged-in user or 401.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            {'detail': 'Not authenticated.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    return Response({
+        'id': request.user.id,
+        'username': request.user.username,
+        'email': request.user.email,
+        'is_superuser': request.user.is_superuser,
+    })
+
+
+# ──────────────────────────────────────────────
+#  FOLLOW-UPS
+# ──────────────────────────────────────────────
+
+@api_view(['GET'])
+def patient_followup(request, pk):
+    """
+    GET /api/patients/<pk>/followup/
+    Returns the patient's full booking history with all test details.
+    Used by the Follow-ups page.
+    """
+    patient = get_object_or_404(Patient, pk=pk)
+
+    bookings = Booking.objects.select_related(
+        'collaborator', 'doctor'
+    ).prefetch_related('items').filter(patient=patient).order_by('-created_at')
+
+    patient_data = PatientSerializer(patient).data
+    bookings_data = BookingSerializer(bookings, many=True).data
+
+    return Response({
+        'patient': patient_data,
+        'bookings': bookings_data,
+        'total_bookings': bookings.count(),
+        'total_spent': sum(float(b.grand_total) for b in bookings),
+    })

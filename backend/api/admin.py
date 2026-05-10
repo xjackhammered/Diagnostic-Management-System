@@ -1,7 +1,6 @@
 from django.contrib import admin
-from .models import Patient, Doctor, Collaborator, Diagnostic, CollaboratorTest, Booking, BookingItem
-
-
+from .models import Patient, Doctor, Collaborator, Diagnostic, CollaboratorTest, Booking, BookingItem, CollaboratorProfile, BookingCompletion
+ 
 @admin.register(Patient)
 class PatientAdmin(admin.ModelAdmin):
     list_display = ['name', 'age', 'contact_number', 'email', 'created_at']
@@ -46,3 +45,11 @@ class BookingAdmin(admin.ModelAdmin):
     search_fields = ['booking_id', 'patient__name', 'patient__contact_number']
     readonly_fields = ['booking_id', 'subtotal', 'discount_amount', 'delivery_charge', 'grand_total']
     inlines = [BookingItemInline]
+
+@admin.register(CollaboratorProfile)
+class CollaboratorProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'collaborator', 'created_at']
+
+@admin.register(BookingCompletion)
+class BookingCompletionAdmin(admin.ModelAdmin):
+    list_display = ['booking', 'completed_by', 'completed_at']

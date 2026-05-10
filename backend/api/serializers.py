@@ -15,7 +15,7 @@ from .models import (
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
-        fields = ['id', 'name', 'age', 'contact_number', 'email', 'created_at']
+        fields = ['id', 'name', 'age', 'gender', 'contact_number', 'email', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
@@ -26,7 +26,7 @@ class PatientSerializer(serializers.ModelSerializer):
 class DoctorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
-        fields = ['id', 'name', 'age', 'contact_number', 'email', 'created_at']
+        fields = ['id', 'name', 'specialization', 'gender', 'age', 'contact_number', 'email', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 

@@ -103,7 +103,6 @@ function ProtectedLayout() {
           <Route path="/bookings"           element={<BookingHistory />} />
           <Route path="/followup"           element={<Followup />} />
           <Route path="/revenue"            element={<Revenue />} />
-          <Route path="/revenue"            element={<Revenue />} />
         </Routes>
       </main>
     </div>

@@ -34,7 +34,7 @@ export default function CollaboratorLogin({ onLogin }) {
       <div style={{ width: '100%', maxWidth: 380 }}>
 
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <img src={logo} alt="BelleVie" style={{ height: 90, objectFit: 'contain' }} />
+          <img src={logo} alt="BelleVie" style={{ height: 130, objectFit: 'contain' }} />
           <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Collaborator Portal</div>
         </div>
 

@@ -5,21 +5,23 @@ import toast from 'react-hot-toast'
 import api from '../api'
 
 // ── API calls ─────────────────────────────────────────────
-const getBreakdown  = ()           => api.get('/revenue/breakdown/').then(r => r.data)
-const getPayments   = (params)     => api.get('/payments/', { params }).then(r => r.data)
-const createPayment = (data)       => api.post('/payments/', data)
-const deletePayment = (id)         => api.delete(`/payments/${id}/`)
+const getBreakdown  = () => api.get('/revenue/breakdown/').then(r => r.data)
+const createPayment = (data) => api.post('/payments/', data)
+const deletePayment = (id) => api.delete(`/payments/${id}/`)
 
 export default function Revenue() {
   const qc = useQueryClient()
-  const [expanded, setExpanded] = useState({})       // collaborator_id -> bool
-  const [logModal, setLogModal] = useState(null)     // collaborator object or null
+  const [expanded, setExpanded] = useState({})
+  const [logModal, setLogModal] = useState(null)
   const [form, setForm] = useState({ amount: '', paid_at: '', notes: '' })
 
-  const { data: breakdown, isLoading } = useQuery({
+  const { data: apiResponse, isLoading } = useQuery({
     queryKey: ['revenue-breakdown'],
     queryFn: getBreakdown,
   })
+
+  // 🔥 Extract the collaborator array from the correct key
+  const breakdownArray = apiResponse?.collaborators ?? []
 
   const createMut = useMutation({
     mutationFn: createPayment,
@@ -57,10 +59,10 @@ export default function Revenue() {
     })
   }
 
-  // Summary totals across all collaborators
-  const totalEarned = breakdown?.reduce((s, c) => s + c.total_earned, 0) || 0
-  const totalPaid   = breakdown?.reduce((s, c) => s + c.total_paid, 0) || 0
-  const totalOwed   = breakdown?.reduce((s, c) => s + c.balance, 0) || 0
+  // Summary totals
+  const totalEarned = breakdownArray.reduce((s, c) => s + Number(c.total_earned), 0)
+  const totalPaid   = breakdownArray.reduce((s, c) => s + Number(c.total_paid), 0)
+  const totalOwed   = breakdownArray.reduce((s, c) => s + Number(c.outstanding), 0)
 
   return (
     <div>
@@ -77,13 +79,17 @@ export default function Revenue() {
           <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <TrendingUp size={11} /> Total Earned
           </div>
-          <div className="stat-value text-green">৳{totalEarned.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="stat-value text-green">
+            ৳{totalEarned.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Wallet size={11} /> Total Received
           </div>
-          <div className="stat-value" style={{ color: '#2563EB' }}>৳{totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="stat-value" style={{ color: '#2563EB' }}>
+            ৳{totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -98,10 +104,10 @@ export default function Revenue() {
       {/* Per-collaborator breakdown */}
       {isLoading ? (
         <div className="card"><div className="empty-state"><div className="spinner" /></div></div>
-      ) : !breakdown?.length ? (
+      ) : !breakdownArray.length ? (
         <div className="card"><div className="empty-state">No data yet.</div></div>
       ) : (
-        breakdown.map(collab => (
+        breakdownArray.map(collab => (
           <div key={collab.collaborator_id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
             {/* Collaborator header row */}
@@ -130,21 +136,29 @@ export default function Revenue() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Earned</div>
-                  <div style={{ fontWeight: 600, color: 'var(--green)' }}>৳{collab.total_earned.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--green)' }}>
+                    ৳{Number(collab.total_earned).toLocaleString(undefined, {minimumFractionDigits:2})}
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Received</div>
-                  <div style={{ fontWeight: 600, color: '#2563EB' }}>৳{collab.total_paid.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                  <div style={{ fontWeight: 600, color: '#2563EB' }}>
+                    ৳{Number(collab.total_paid).toLocaleString(undefined, {minimumFractionDigits:2})}
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Balance</div>
-                  <div style={{ fontWeight: 700, color: collab.balance > 0 ? 'var(--red)' : 'var(--green)' }}>
-                    ৳{collab.balance.toLocaleString(undefined, {minimumFractionDigits:2})}
+                  <div style={{ fontWeight: 700, color: Number(collab.outstanding) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                    ৳{Number(collab.outstanding).toLocaleString(undefined, {minimumFractionDigits:2})}
                   </div>
                 </div>
                 <button
                   className="btn btn-primary btn-sm"
-                  onClick={e => { e.stopPropagation(); setLogModal(collab); setForm({ amount: '', paid_at: new Date().toISOString().split('T')[0], notes: '' }) }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setLogModal(collab);
+                    setForm({ amount: '', paid_at: new Date().toISOString().split('T')[0], notes: '' });
+                  }}
                 >
                   <Plus size={13} /> Log Payment
                 </button>
@@ -180,12 +194,12 @@ export default function Revenue() {
                               <td>{b.patient_name}</td>
                               <td>
                                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                  {b.tests.map(t => t.name).join(', ')}
+                                  {b.items.map(t => t.test_name).join(', ')}
                                 </div>
                               </td>
-                              <td>৳{b.grand_total.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                              <td>৳{Number(b.grand_total).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
                               <td style={{ fontWeight: 600, color: 'var(--green)' }}>
-                                ৳{b.our_cut.toLocaleString(undefined, {minimumFractionDigits:2})}
+                                ৳{Number(b.our_cut).toLocaleString(undefined, {minimumFractionDigits:2})}
                               </td>
                               <td className="text-muted">
                                 {new Date(b.created_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'})}
@@ -215,7 +229,9 @@ export default function Revenue() {
                           {collab.payments.map(p => (
                             <tr key={p.id}>
                               <td>{new Date(p.paid_at).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'})}</td>
-                              <td style={{ fontWeight: 600, color: '#2563EB' }}>৳{Number(p.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                              <td style={{ fontWeight: 600, color: '#2563EB' }}>
+                                ৳{Number(p.amount).toLocaleString(undefined, {minimumFractionDigits:2})}
+                              </td>
                               <td className="text-muted">{p.notes || '—'}</td>
                               <td>
                                 <button
@@ -249,8 +265,9 @@ export default function Revenue() {
             </div>
 
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-              Outstanding balance: <strong style={{ color: logModal.balance > 0 ? 'var(--red)' : 'var(--green)' }}>
-                ৳{logModal.balance.toLocaleString(undefined, {minimumFractionDigits:2})}
+              Outstanding balance:{' '}
+              <strong style={{ color: Number(logModal.outstanding) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                ৳{Number(logModal.outstanding).toLocaleString(undefined, {minimumFractionDigits:2})}
               </strong>
             </div>
 

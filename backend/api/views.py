@@ -4,16 +4,22 @@ from rest_framework import status
 from django.http import HttpResponse
 from django.db.models import Count, Sum, Q
 from django.shortcuts import get_object_or_404
+from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import ensure_csrf_cookie
 from decimal import Decimal
 from urllib.parse import quote
+
 from .models import (
     Patient, Doctor, Collaborator, Diagnostic,
-    CollaboratorTest, Booking, BookingItem
+    CollaboratorTest, Booking, BookingItem,
+    Payment, CollaboratorProfile, BookingCompletion
 )
 from .serializers import (
     PatientSerializer, DoctorSerializer, CollaboratorSerializer,
     DiagnosticSerializer, CollaboratorTestSerializer,
     BookingSerializer, BookingCreateSerializer,
+    PaymentSerializer, CollaboratorBookingSerializer,
+    BookingCompletionSerializer,
 )
 from .pdf_generator import generate_booking_pdf
 
@@ -23,7 +29,6 @@ from .pdf_generator import generate_booking_pdf
 # ──────────────────────────────────────────────
 
 def paginate(qs, request):
-    """Simple page-based pagination. Returns (slice, meta dict)."""
     page_size = int(request.query_params.get('page_size', 20))
     page = int(request.query_params.get('page', 1))
     total = qs.count()
@@ -44,10 +49,6 @@ def paginate(qs, request):
 
 @api_view(['GET', 'POST'])
 def patient_list(request):
-    """
-    GET  /api/patients/  — list patients (?search=name)
-    POST /api/patients/  — create a patient
-    """
     if request.method == 'GET':
         qs = Patient.objects.all().order_by('name')
         search = request.query_params.get('search', '').strip()
@@ -58,8 +59,7 @@ def patient_list(request):
                 Q(email__icontains=search)
             )
         results, meta = paginate(qs, request)
-        serializer = PatientSerializer(results, many=True)
-        return Response({**meta, 'results': serializer.data})
+        return Response({**meta, 'results': PatientSerializer(results, many=True).data})
 
     if request.method == 'POST':
         serializer = PatientSerializer(data=request.data)
@@ -71,11 +71,6 @@ def patient_list(request):
 
 @api_view(['GET', 'PATCH', 'PUT', 'DELETE'])
 def patient_detail(request, pk):
-    """
-    GET    /api/patients/<pk>/
-    PATCH  /api/patients/<pk>/
-    DELETE /api/patients/<pk>/
-    """
     patient = get_object_or_404(Patient, pk=pk)
 
     if request.method == 'GET':
@@ -89,8 +84,15 @@ def patient_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
-        patient.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        from django.db.models import ProtectedError
+        try:
+            patient.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError:
+            return Response(
+                {'detail': 'Cannot delete — this patient has existing bookings.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 # ──────────────────────────────────────────────
@@ -99,10 +101,6 @@ def patient_detail(request, pk):
 
 @api_view(['GET', 'POST'])
 def doctor_list(request):
-    """
-    GET  /api/doctors/
-    POST /api/doctors/
-    """
     if request.method == 'GET':
         qs = Doctor.objects.all().order_by('name')
         search = request.query_params.get('search', '').strip()
@@ -144,10 +142,6 @@ def doctor_detail(request, pk):
 
 @api_view(['GET', 'POST'])
 def collaborator_list(request):
-    """
-    GET  /api/collaborators/
-    POST /api/collaborators/
-    """
     if request.method == 'GET':
         qs = Collaborator.objects.all().order_by('name')
         search = request.query_params.get('search', '').strip()
@@ -189,10 +183,6 @@ def collaborator_detail(request, pk):
 
 @api_view(['GET', 'POST'])
 def diagnostic_list(request):
-    """
-    GET  /api/diagnostics/  — list all diagnostic test names (?search=)
-    POST /api/diagnostics/  — create a new diagnostic test name
-    """
     if request.method == 'GET':
         qs = Diagnostic.objects.all().order_by('name')
         search = request.query_params.get('search', '').strip()
@@ -229,18 +219,11 @@ def diagnostic_detail(request, pk):
 
 
 # ──────────────────────────────────────────────
-#  COLLABORATOR TESTS (price assignment)
+#  COLLABORATOR TESTS
 # ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def collaborator_test_list(request):
-    """
-    GET  /api/collaborator-tests/
-         ?collaborator=<id>  filter by collaborator
-         ?diagnostic=<id>    filter by diagnostic
-         ?search=<name>      search by diagnostic name
-    POST /api/collaborator-tests/  — assign a diagnostic to a collaborator with a price
-    """
     if request.method == 'GET':
         qs = CollaboratorTest.objects.select_related(
             'collaborator', 'diagnostic'
@@ -271,11 +254,6 @@ def collaborator_test_list(request):
 
 @api_view(['GET', 'PATCH', 'PUT', 'DELETE'])
 def collaborator_test_detail(request, pk):
-    """
-    GET    /api/collaborator-tests/<pk>/
-    PATCH  /api/collaborator-tests/<pk>/  — update price or active status
-    DELETE /api/collaborator-tests/<pk>/  — deactivate (soft delete)
-    """
     ct = get_object_or_404(
         CollaboratorTest.objects.select_related('collaborator', 'diagnostic'), pk=pk
     )
@@ -291,7 +269,6 @@ def collaborator_test_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
-        # Soft delete — keep the record so existing BookingItems still reference it
         ct.is_active = False
         ct.save()
         return Response(
@@ -306,17 +283,10 @@ def collaborator_test_detail(request, pk):
 
 @api_view(['GET', 'POST'])
 def booking_list(request):
-    """
-    GET  /api/bookings/
-         ?search=        patient name / phone / booking_id
-         ?collaborator=  filter by collaborator id
-         ?service_type=  center | home
-    POST /api/bookings/  — create a booking
-    """
     if request.method == 'GET':
         qs = Booking.objects.select_related(
             'patient', 'collaborator', 'doctor'
-        ).prefetch_related('items').all()
+        ).prefetch_related('items', 'completion').all()
 
         search = request.query_params.get('search', '').strip()
         if search:
@@ -334,6 +304,7 @@ def booking_list(request):
         if service_type in ('center', 'home'):
             qs = qs.filter(service_type=service_type)
 
+        qs = qs.order_by('-created_at')
         results, meta = paginate(qs, request)
         return Response({**meta, 'results': BookingSerializer(results, many=True).data})
 
@@ -350,22 +321,16 @@ def booking_list(request):
 
 @api_view(['GET', 'PATCH', 'PUT', 'DELETE'])
 def booking_detail(request, pk):
-    """
-    GET    /api/bookings/<pk>/
-    PATCH  /api/bookings/<pk>/  — update notes, scheduled_at, doctor only
-    DELETE /api/bookings/<pk>/
-    """
     booking = get_object_or_404(
         Booking.objects.select_related(
             'patient', 'collaborator', 'doctor'
-        ).prefetch_related('items'), pk=pk
+        ).prefetch_related('items', 'completion'), pk=pk
     )
 
     if request.method == 'GET':
         return Response(BookingSerializer(booking).data)
 
     if request.method in ('PATCH', 'PUT'):
-        # Only allow updating non-financial fields after creation
         editable = {'notes', 'scheduled_at', 'doctor', 'service_type'}
         data = {k: v for k, v in request.data.items() if k in editable}
         serializer = BookingSerializer(booking, data=data, partial=True)
@@ -381,30 +346,24 @@ def booking_detail(request, pk):
 
 @api_view(['GET'])
 def booking_pdf(request, pk):
-    """
-    GET /api/bookings/<pk>/pdf/  — download booking receipt as PDF
-    """
     booking = get_object_or_404(
         Booking.objects.select_related(
             'patient', 'collaborator', 'doctor'
         ).prefetch_related('items'), pk=pk
     )
     pdf_buffer = generate_booking_pdf(booking)
-    # Strip non-ASCII characters to avoid (anonymous) filename in browsers
-    safe_name = ''.join(c for c in booking.patient.name if c.isascii() and (c.isalnum() or c in ' _-')).strip().replace(' ', '_')
+    safe_name = ''.join(
+        c for c in booking.patient.name
+        if c.isascii() and (c.isalnum() or c in ' _-')
+    ).strip().replace(' ', '_')
     filename = f"{booking.booking_id}_{safe_name}.pdf"
     response = HttpResponse(pdf_buffer, content_type='application/pdf')
-    # Use both filename and filename* (RFC 5987) for maximum browser compatibility
     response['Content-Disposition'] = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
     return response
 
 
 @api_view(['GET'])
 def booking_stats(request):
-    """
-    GET /api/bookings/stats/
-    Total revenue = our cut: sum of (grand_total * collaborator.percentage / 100) per booking
-    """
     bookings = Booking.objects.select_related('collaborator').all()
     our_revenue = sum(
         b.grand_total * (b.collaborator.percentage / 100)
@@ -425,26 +384,14 @@ def booking_stats(request):
 #  AUTH
 # ──────────────────────────────────────────────
 
-from django.contrib.auth import authenticate, login, logout
-from django.views.decorators.csrf import ensure_csrf_cookie
-
-
 @api_view(['GET'])
 @ensure_csrf_cookie
 def csrf_token(request):
-    """
-    GET /api/auth/csrf/
-    Called once when the React app loads so the browser gets the CSRF cookie.
-    """
     return Response({'detail': 'CSRF cookie set'})
 
 
 @api_view(['POST'])
 def login_view(request):
-    """
-    POST /api/auth/login/
-    Body: { username, password }
-    """
     username = request.data.get('username', '').strip()
     password = request.data.get('password', '')
 
@@ -460,6 +407,13 @@ def login_view(request):
         return Response(
             {'detail': 'Invalid username or password.'},
             status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Block collaborator accounts from the admin login
+    if hasattr(user, 'collaborator_profile'):
+        return Response(
+            {'detail': 'Please use the collaborator portal to sign in.'},
+            status=status.HTTP_403_FORBIDDEN
         )
 
     if not user.is_staff:
@@ -479,24 +433,25 @@ def login_view(request):
 
 @api_view(['POST'])
 def logout_view(request):
-    """
-    POST /api/auth/logout/
-    """
     logout(request)
     return Response({'detail': 'Logged out successfully.'})
 
 
 @api_view(['GET'])
 def me(request):
-    """
-    GET /api/auth/me/
-    Returns the currently logged-in user or 401.
-    """
     if not request.user.is_authenticated:
         return Response(
             {'detail': 'Not authenticated.'},
             status=status.HTTP_401_UNAUTHORIZED
         )
+
+    # If a collaborator session bleeds into the admin, reject it
+    if hasattr(request.user, 'collaborator_profile'):
+        return Response(
+            {'detail': 'Not authenticated.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
     return Response({
         'id': request.user.id,
         'username': request.user.username,
@@ -511,16 +466,13 @@ def me(request):
 
 @api_view(['GET'])
 def patient_followup(request, pk):
-    """
-    GET /api/patients/<pk>/followup/
-    Returns the patient's full booking history with all test details.
-    Used by the Follow-ups page.
-    """
     patient = get_object_or_404(Patient, pk=pk)
 
     bookings = Booking.objects.select_related(
         'collaborator', 'doctor'
-    ).prefetch_related('items').filter(patient=patient).order_by('-created_at')
+    ).prefetch_related('items', 'completion').filter(
+        patient=patient
+    ).order_by('-created_at')
 
     patient_data = PatientSerializer(patient).data
     bookings_data = BookingSerializer(bookings, many=True).data
@@ -534,72 +486,11 @@ def patient_followup(request, pk):
 
 
 # ──────────────────────────────────────────────
-#  PAYMENTS
+#  REVENUE & PAYMENTS
 # ──────────────────────────────────────────────
-
-from .models import Payment
-from .serializers import PaymentSerializer
-
-
-@api_view(['GET', 'POST'])
-def payment_list(request):
-    """
-    GET  /api/payments/  — list all payments (?collaborator=<id>)
-    POST /api/payments/  — log a new payment from a collaborator
-    """
-    if request.method == 'GET':
-        qs = Payment.objects.select_related('collaborator').all()
-
-        collaborator_id = request.query_params.get('collaborator')
-        if collaborator_id:
-            qs = qs.filter(collaborator_id=collaborator_id)
-
-        results, meta = paginate(qs, request)
-        return Response({**meta, 'results': PaymentSerializer(results, many=True).data})
-
-    if request.method == 'POST':
-        serializer = PaymentSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['GET', 'PATCH', 'DELETE'])
-def payment_detail(request, pk):
-    """
-    GET    /api/payments/<pk>/
-    PATCH  /api/payments/<pk>/  — edit amount, date or notes
-    DELETE /api/payments/<pk>/  — remove a payment record
-    """
-    payment = get_object_or_404(Payment, pk=pk)
-
-    if request.method == 'GET':
-        return Response(PaymentSerializer(payment).data)
-
-    if request.method == 'PATCH':
-        serializer = PaymentSerializer(payment, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    if request.method == 'DELETE':
-        payment.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 @api_view(['GET'])
 def revenue_breakdown(request):
-    """
-    GET /api/revenue/
-    Returns per-collaborator revenue breakdown:
-    - our_cut per booking (grand_total * percentage / 100)
-    - total earned across all bookings
-    - total paid (sum of Payment records)
-    - outstanding balance
-    - list of individual bookings with our cut shown
-    """
     collaborators = Collaborator.objects.prefetch_related(
         'bookings__items', 'payments'
     ).all()
@@ -619,7 +510,7 @@ def revenue_breakdown(request):
             booking_breakdown.append({
                 'id': b.id,
                 'booking_id': b.booking_id,
-                'patient_name': b.patient.name,
+                'patient_name': b.patient.name if b.patient else 'N/A',
                 'grand_total': str(b.grand_total),
                 'our_cut': str(our_cut),
                 'scheduled_at': b.scheduled_at,
@@ -657,7 +548,6 @@ def revenue_breakdown(request):
             'payments': payment_records,
         })
 
-    # Summary totals across all collaborators
     grand_earned = sum(Decimal(r['total_earned']) for r in result)
     grand_paid = sum(Decimal(r['total_paid']) for r in result)
     grand_outstanding = grand_earned - grand_paid
@@ -672,90 +562,15 @@ def revenue_breakdown(request):
     })
 
 
-# ──────────────────────────────────────────────
-#  REVENUE & PAYMENTS
-# ──────────────────────────────────────────────
-
-from .models import Payment
-from .serializers import PaymentSerializer
-
-
-@api_view(['GET'])
-def revenue_breakdown(request):
-    """
-    GET /api/revenue/breakdown/
-    Returns per-collaborator summary:
-      - total_earned  : sum of (grand_total * percentage/100) across all bookings
-      - total_paid    : sum of all Payment records for that collaborator
-      - balance       : total_earned - total_paid
-      - bookings      : each booking with our_cut calculated
-    """
-    collaborators = Collaborator.objects.all()
-    result = []
-
-    for collab in collaborators:
-        bookings = Booking.objects.filter(
-            collaborator=collab
-        ).order_by('-created_at')
-
-        booking_rows = []
-        total_earned = 0
-
-        for b in bookings:
-            our_cut = float(b.grand_total) * float(collab.percentage) / 100
-            total_earned += our_cut
-            booking_rows.append({
-                'id': b.id,
-                'booking_id': b.booking_id,
-                'patient_name': b.patient.name if b.patient else 'N/A',
-                'grand_total': float(b.grand_total),
-                'our_cut': round(our_cut, 2),
-                'scheduled_at': b.scheduled_at,
-                'created_at': b.created_at,
-                'tests': [
-                    {'name': item.test_name, 'price': float(item.price)}
-                    for item in b.items.all()
-                ],
-            })
-
-        payments = Payment.objects.filter(collaborator=collab)
-        total_paid = float(sum(p.amount for p in payments))
-        balance = round(total_earned - total_paid, 2)
-
-        payment_rows = PaymentSerializer(payments, many=True).data
-
-        result.append({
-            'collaborator_id': collab.id,
-            'collaborator_name': collab.name,
-            'collaborator_contact': collab.contact_number,
-            'percentage': float(collab.percentage),
-            'total_bookings': len(booking_rows),
-            'total_earned': round(total_earned, 2),
-            'total_paid': round(total_paid, 2),
-            'balance': balance,
-            'bookings': booking_rows,
-            'payments': payment_rows,
-        })
-
-    # Sort by balance descending — most owed first
-    result.sort(key=lambda x: x['balance'], reverse=True)
-    return Response(result)
-
-
 @api_view(['GET', 'POST'])
 def payment_list(request):
-    """
-    GET  /api/payments/           — list all payments (?collaborator=<id>)
-    POST /api/payments/           — log a new payment
-    Body: { collaborator, amount, paid_at, notes }
-    """
     if request.method == 'GET':
         qs = Payment.objects.select_related('collaborator').all()
         collaborator_id = request.query_params.get('collaborator')
         if collaborator_id:
             qs = qs.filter(collaborator_id=collaborator_id)
-        serializer = PaymentSerializer(qs, many=True)
-        return Response(serializer.data)
+        results, meta = paginate(qs, request)
+        return Response({**meta, 'results': PaymentSerializer(results, many=True).data})
 
     if request.method == 'POST':
         serializer = PaymentSerializer(data=request.data)
@@ -767,11 +582,6 @@ def payment_list(request):
 
 @api_view(['GET', 'PATCH', 'DELETE'])
 def payment_detail(request, pk):
-    """
-    GET    /api/payments/<pk>/
-    PATCH  /api/payments/<pk>/  — edit amount, date, notes
-    DELETE /api/payments/<pk>/  — delete a payment record
-    """
     payment = get_object_or_404(Payment, pk=pk)
 
     if request.method == 'GET':
@@ -793,17 +603,8 @@ def payment_detail(request, pk):
 #  COLLABORATOR PORTAL
 # ──────────────────────────────────────────────
 
-from .models import CollaboratorProfile, BookingCompletion
-from .serializers import CollaboratorBookingSerializer, BookingCompletionSerializer
-
-
 @api_view(['POST'])
 def collaborator_login(request):
-    """
-    POST /api/collaborator/login/
-    Body: { username, password }
-    Only allows users who have a CollaboratorProfile.
-    """
     username = request.data.get('username', '').strip()
     password = request.data.get('password', '')
 
@@ -821,7 +622,6 @@ def collaborator_login(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-    # Must have a collaborator profile — not an admin
     try:
         profile = user.collaborator_profile
     except CollaboratorProfile.DoesNotExist:
@@ -841,17 +641,12 @@ def collaborator_login(request):
 
 @api_view(['POST'])
 def collaborator_logout(request):
-    """POST /api/collaborator/logout/"""
     logout(request)
     return Response({'detail': 'Logged out.'})
 
 
 @api_view(['GET'])
 def collaborator_me(request):
-    """
-    GET /api/collaborator/me/
-    Returns the logged-in collaborator's info.
-    """
     if not request.user.is_authenticated:
         return Response({'detail': 'Not authenticated.'}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -870,11 +665,6 @@ def collaborator_me(request):
 
 @api_view(['GET'])
 def collaborator_bookings(request):
-    """
-    GET /api/collaborator/bookings/
-    Returns paginated bookings for the logged-in collaborator.
-    Uncompleted bookings first, then completed, newest within each group.
-    """
     if not request.user.is_authenticated:
         return Response({'detail': 'Not authenticated.'}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -891,14 +681,11 @@ def collaborator_bookings(request):
         'items', 'completion'
     ).order_by('-created_at')
 
-    # Uncompleted first, then completed — within each group newest first
-    # We do this in Python since it's a two-level sort
     bookings = list(qs)
     uncompleted = [b for b in bookings if not hasattr(b, 'completion')]
     completed   = [b for b in bookings if hasattr(b, 'completion')]
     bookings = uncompleted + completed
 
-    # Pagination
     page_size = int(request.query_params.get('page_size', 15))
     page      = int(request.query_params.get('page', 1))
     total     = len(bookings)
@@ -919,10 +706,6 @@ def collaborator_bookings(request):
 
 @api_view(['POST', 'DELETE'])
 def toggle_booking_completion(request, pk):
-    """
-    POST   /api/collaborator/bookings/<pk>/complete/  — mark as complete
-    DELETE /api/collaborator/bookings/<pk>/complete/  — unmark
-    """
     if not request.user.is_authenticated:
         return Response({'detail': 'Not authenticated.'}, status=status.HTTP_401_UNAUTHORIZED)
 

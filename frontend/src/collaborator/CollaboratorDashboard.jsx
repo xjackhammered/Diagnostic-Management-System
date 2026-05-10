@@ -32,15 +32,17 @@ export default function CollaboratorDashboard({ user, onLogout }) {
   })
 
   const handleLogout = async () => {
-    try {
-      await collabLogout()
-      onLogout()
-    } catch {
-      onLogout()
+      try {
+        await collabLogout()
+      } catch {
+        // continue regardless
+      } finally {
+        qc.clear()   // ← clears ALL react query cache
+        onLogout()
+      }
     }
-  }
-
-  const handleDownload = async (b) => {
+  
+    const handleDownload = async (b) => {
     try {
       await collabDownloadPDF(b.id, `${b.booking_id}_${b.patient_name?.replace(/\s+/g, '_')}.pdf`)
     } catch {
@@ -250,3 +252,4 @@ export default function CollaboratorDashboard({ user, onLogout }) {
     </div>
   )
 }
+

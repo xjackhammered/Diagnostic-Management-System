@@ -2,13 +2,14 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 're
 import {
   LayoutDashboard, Users, UserRound, Building2,
   FlaskConical, TestTube, ClipboardPlus, History,
-  RefreshCw, LogOut
+  RefreshCw, LogOut, DollarSign
 } from 'lucide-react'
 import { useAuth } from './context/AuthContext'
 import { logoutUser } from './api'
 import toast from 'react-hot-toast'
 
 import Login from './pages/Login'
+import CollaboratorApp from './collaborator/CollaboratorApp'
 import Dashboard from './pages/Dashboard'
 import Patients from './pages/Patients'
 import Doctors from './pages/Doctors'
@@ -18,6 +19,8 @@ import CollaboratorTests from './pages/CollaboratorTests'
 import NewBooking from './pages/NewBooking'
 import BookingHistory from './pages/BookingHistory'
 import Followup from './pages/Followup'
+import Revenue from './pages/Revenue'
+
 
 const navLink = ({ isActive }) => 'nav-link' + (isActive ? ' active' : '')
 
@@ -68,6 +71,7 @@ function ProtectedLayout() {
           <NavLink to="/booking/new" className={navLink}><ClipboardPlus />New Booking</NavLink>
           <NavLink to="/bookings" className={navLink}><History />All Bookings</NavLink>
           <NavLink to="/followup" className={navLink}><RefreshCw />Follow-ups</NavLink>
+          <NavLink to="/revenue" className={navLink}><DollarSign />Revenue</NavLink>
         </nav>
 
         {/* Logged in user + logout at bottom of sidebar */}
@@ -98,6 +102,8 @@ function ProtectedLayout() {
           <Route path="/booking/new"        element={<NewBooking />} />
           <Route path="/bookings"           element={<BookingHistory />} />
           <Route path="/followup"           element={<Followup />} />
+          <Route path="/revenue"            element={<Revenue />} />
+          <Route path="/revenue"            element={<Revenue />} />
         </Routes>
       </main>
     </div>
@@ -108,8 +114,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<LoginGuard />} />
-        <Route path="/*"     element={<ProtectedLayout />} />
+        <Route path="/login"            element={<LoginGuard />} />
+        <Route path="/collaborator/*"  element={<CollaboratorApp />} />
+        <Route path="/*"               element={<ProtectedLayout />} />
       </Routes>
     </BrowserRouter>
   )

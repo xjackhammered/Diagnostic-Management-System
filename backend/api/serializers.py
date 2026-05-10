@@ -3,24 +3,36 @@ from decimal import Decimal
 from django.conf import settings
 from .models import (
     Patient, Doctor, Collaborator, Diagnostic,
-    CollaboratorTest, Booking, BookingItem
+    CollaboratorTest, Booking, BookingItem, Payment,
+    CollaboratorProfile, BookingCompletion
 )
 
+
+# ──────────────────────────────────────────────
+#  PATIENT
+# ──────────────────────────────────────────────
 
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
-        fields = ['id', 'name', 'age', 'contact_number', 'email', 'gender', 'created_at']
+        fields = ['id', 'name', 'age', 'contact_number', 'email', 'created_at']
         read_only_fields = ['id', 'created_at']
 
+
+# ──────────────────────────────────────────────
+#  DOCTOR
+# ──────────────────────────────────────────────
 
 class DoctorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
-        fields = ['id', 'name', 'age', 'contact_number', 'email', 'gender', 'specialization', 'created_at']
+        fields = ['id', 'name', 'age', 'contact_number', 'email', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 
+# ──────────────────────────────────────────────
+#  COLLABORATOR
+# ──────────────────────────────────────────────
 
 class CollaboratorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -29,6 +41,9 @@ class CollaboratorSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+# ──────────────────────────────────────────────
+#  DIAGNOSTIC
+# ──────────────────────────────────────────────
 
 class DiagnosticSerializer(serializers.ModelSerializer):
     class Meta:
@@ -37,7 +52,9 @@ class DiagnosticSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
-
+# ──────────────────────────────────────────────
+#  COLLABORATOR TEST
+# ──────────────────────────────────────────────
 
 class CollaboratorTestSerializer(serializers.ModelSerializer):
     """
@@ -59,7 +76,7 @@ class CollaboratorTestSerializer(serializers.ModelSerializer):
     def validate(self, data):
         collaborator = data.get('collaborator')
         diagnostic = data.get('diagnostic')
-
+        # On create, check unique_together manually so we return a clean error
         instance = self.instance
         qs = CollaboratorTest.objects.filter(
             collaborator=collaborator, diagnostic=diagnostic
@@ -73,7 +90,12 @@ class CollaboratorTestSerializer(serializers.ModelSerializer):
         return data
 
 
+# ──────────────────────────────────────────────
+#  BOOKING
+# ──────────────────────────────────────────────
+
 class BookingItemSerializer(serializers.ModelSerializer):
+    """Used for reading booking items (nested inside BookingSerializer)."""
     class Meta:
         model = BookingItem
         fields = ['id', 'collaborator_test', 'test_name', 'price']
@@ -81,6 +103,7 @@ class BookingItemSerializer(serializers.ModelSerializer):
 
 
 class BookingSerializer(serializers.ModelSerializer):
+    """Full read serializer — used for GET responses."""
     items = BookingItemSerializer(many=True, read_only=True)
     patient_name = serializers.CharField(source='patient.name', read_only=True)
     collaborator_name = serializers.CharField(source='collaborator.name', read_only=True)
@@ -98,19 +121,23 @@ class BookingSerializer(serializers.ModelSerializer):
             'discount_amount', 'delivery_charge',
             'subtotal', 'grand_total',
             'notes', 'items',
-            'created_at'
+            'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'booking_id',
             'patient_name', 'collaborator_name', 'doctor_name',
             'discount_amount', 'delivery_charge',
             'subtotal', 'grand_total',
-            'created_at'
+            'created_at', 'updated_at',
         ]
 
 
 class BookingCreateSerializer(serializers.Serializer):
-
+    """
+    Write serializer for creating a booking.
+    Accepts collaborator_test IDs, validates they all belong to the
+    chosen collaborator, then computes all financials server-side.
+    """
     patient = serializers.PrimaryKeyRelatedField(queryset=Patient.objects.all())
     collaborator = serializers.PrimaryKeyRelatedField(queryset=Collaborator.objects.all())
     doctor = serializers.PrimaryKeyRelatedField(
@@ -130,19 +157,19 @@ class BookingCreateSerializer(serializers.Serializer):
         collaborator = data['collaborator']
         test_ids = data['collaborator_test_ids']
 
-        
+        # Fetch the CollaboratorTest records
         tests = CollaboratorTest.objects.select_related('diagnostic').filter(
             id__in=test_ids,
             is_active=True,
         )
 
-        
+        # Check all IDs exist and are active
         if tests.count() != len(set(test_ids)):
             raise serializers.ValidationError(
                 {'collaborator_test_ids': 'One or more test IDs are invalid or inactive.'}
             )
 
-        
+        # Check all tests belong to the chosen collaborator
         wrong = tests.exclude(collaborator=collaborator)
         if wrong.exists():
             names = list(wrong.values_list('diagnostic__name', flat=True))
@@ -186,8 +213,74 @@ class BookingCreateSerializer(serializers.Serializer):
             BookingItem.objects.create(
                 booking=booking,
                 collaborator_test=test,
-                test_name=test.diagnostic.name, 
-                price=test.price,                 
+                test_name=test.diagnostic.name,   # snapshot
+                price=test.price,                  # snapshot
             )
 
         return booking
+
+
+# ──────────────────────────────────────────────
+#  PAYMENT
+# ──────────────────────────────────────────────
+
+class PaymentSerializer(serializers.ModelSerializer):
+    collaborator_name = serializers.CharField(source='collaborator.name', read_only=True)
+
+    class Meta:
+        model = Payment
+        fields = ['id', 'collaborator', 'collaborator_name', 'amount', 'paid_at', 'notes', 'created_at']
+        read_only_fields = ['id', 'collaborator_name', 'created_at']
+
+
+# ──────────────────────────────────────────────
+#  PAYMENT
+# ──────────────────────────────────────────────
+
+class PaymentSerializer(serializers.ModelSerializer):
+    collaborator_name = serializers.CharField(source='collaborator.name', read_only=True)
+
+    class Meta:
+        model = Payment
+        fields = ['id', 'collaborator', 'collaborator_name', 'amount', 'paid_at', 'notes', 'created_at']
+        read_only_fields = ['id', 'collaborator_name', 'created_at']
+
+
+# ──────────────────────────────────────────────
+#  COLLABORATOR PORTAL
+# ──────────────────────────────────────────────
+
+class BookingCompletionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BookingCompletion
+        fields = ['id', 'completed_at', 'completed_by']
+        read_only_fields = ['id', 'completed_at', 'completed_by']
+
+
+class CollaboratorBookingSerializer(serializers.ModelSerializer):
+    """
+    Booking serializer for the collaborator portal.
+    Includes items and completion status.
+    """
+    items = BookingItemSerializer(many=True, read_only=True)
+    patient_name = serializers.CharField(source='patient.name', read_only=True)
+    is_completed = serializers.SerializerMethodField()
+    completed_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Booking
+        fields = [
+            'id', 'booking_id', 'patient_name',
+            'service_type', 'scheduled_at',
+            'grand_total', 'notes',
+            'items', 'is_completed', 'completed_at',
+            'created_at',
+        ]
+
+    def get_is_completed(self, obj):
+        return hasattr(obj, 'completion')
+
+    def get_completed_at(self, obj):
+        if hasattr(obj, 'completion'):
+            return obj.completion.completed_at
+        return None

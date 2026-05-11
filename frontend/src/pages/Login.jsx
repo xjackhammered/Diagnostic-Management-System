@@ -42,7 +42,7 @@ export default function Login() {
           <img
             src={logo}
             alt="BelleVie"
-            style={{ height: 120, objectFit: 'contain' }}
+            style={{ height: 130, objectFit: 'contain' }}
           />
         </div>
 

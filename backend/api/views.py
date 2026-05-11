@@ -24,10 +24,6 @@ from .serializers import (
 from .pdf_generator import generate_booking_pdf
 
 
-# ──────────────────────────────────────────────
-#  HELPERS
-# ──────────────────────────────────────────────
-
 def paginate(qs, request):
     page_size = int(request.query_params.get('page_size', 20))
     page = int(request.query_params.get('page', 1))
@@ -42,10 +38,6 @@ def paginate(qs, request):
         'previous': page - 1 if page > 1 else None,
     }
 
-
-# ──────────────────────────────────────────────
-#  PATIENTS
-# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def patient_list(request):
@@ -95,10 +87,6 @@ def patient_detail(request, pk):
             )
 
 
-# ──────────────────────────────────────────────
-#  DOCTORS
-# ──────────────────────────────────────────────
-
 @api_view(['GET', 'POST'])
 def doctor_list(request):
     if request.method == 'GET':
@@ -135,10 +123,6 @@ def doctor_detail(request, pk):
         doctor.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-
-# ──────────────────────────────────────────────
-#  COLLABORATORS
-# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def collaborator_list(request):
@@ -177,10 +161,6 @@ def collaborator_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# ──────────────────────────────────────────────
-#  DIAGNOSTICS
-# ──────────────────────────────────────────────
-
 @api_view(['GET', 'POST'])
 def diagnostic_list(request):
     if request.method == 'GET':
@@ -217,10 +197,6 @@ def diagnostic_detail(request, pk):
         diagnostic.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-
-# ──────────────────────────────────────────────
-#  COLLABORATOR TESTS
-# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def collaborator_test_list(request):
@@ -276,10 +252,6 @@ def collaborator_test_detail(request, pk):
             status=status.HTTP_200_OK
         )
 
-
-# ──────────────────────────────────────────────
-#  BOOKINGS
-# ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
 def booking_list(request):
@@ -380,10 +352,6 @@ def booking_stats(request):
     return Response(data)
 
 
-# ──────────────────────────────────────────────
-#  AUTH
-# ──────────────────────────────────────────────
-
 @api_view(['GET'])
 @ensure_csrf_cookie
 def csrf_token(request):
@@ -460,10 +428,6 @@ def me(request):
     })
 
 
-# ──────────────────────────────────────────────
-#  FOLLOW-UPS
-# ──────────────────────────────────────────────
-
 @api_view(['GET'])
 def patient_followup(request, pk):
     patient = get_object_or_404(Patient, pk=pk)
@@ -484,10 +448,6 @@ def patient_followup(request, pk):
         'total_spent': sum(float(b.grand_total) for b in bookings),
     })
 
-
-# ──────────────────────────────────────────────
-#  REVENUE & PAYMENTS
-# ──────────────────────────────────────────────
 
 @api_view(['GET'])
 def revenue_breakdown(request):
@@ -597,11 +557,6 @@ def payment_detail(request, pk):
     if request.method == 'DELETE':
         payment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-# ──────────────────────────────────────────────
-#  COLLABORATOR PORTAL
-# ──────────────────────────────────────────────
 
 @api_view(['POST'])
 def collaborator_login(request):
